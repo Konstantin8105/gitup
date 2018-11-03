@@ -86,14 +86,6 @@ func clone(repos string) (err error) {
 		return fmt.Errorf("repository name if not in pattern")
 	}
 
-	// git checkout master
-	// git pull
-	//
-	// OR
-	//
-	// git clone repository
-
-	fmt.Println("repos : ", repos)
-
+	fmt.Println(repos)
 	return nil
 }
