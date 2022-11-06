@@ -18,16 +18,20 @@ func main() {
 
 	flag.Parse()
 
-	err := gitup(*userName)
+	rs, err := gitup(*userName)
 	if err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(-1)
 	}
+	for _, repos := range rs {
+		fmt.Fprintf(os.Stdout, "%s\n", repos)
+	}
 }
 
-func gitup(userName string) (err error) {
+func gitup(userName string) (rs []string, err error) {
 	if userName == "" {
-		return fmt.Errorf("user name is empty")
+		err = fmt.Errorf("user name is empty")
+		return
 	}
 
 	url := fmt.Sprintf(
@@ -36,19 +40,22 @@ func gitup(userName string) (err error) {
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("cannot get request: %v", err)
+		err = fmt.Errorf("cannot get request: %v", err)
+		return
 	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("cannot get responce: %v", err)
+		err = fmt.Errorf("cannot get responce: %v", err)
+		return
 	}
 
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("cannot read body: %v", err)
+		err = fmt.Errorf("cannot read body: %v", err)
+		return
 	}
 
 	lines := strings.Split(string(body), ",")
@@ -61,31 +68,32 @@ func gitup(userName string) (err error) {
 		// parse
 		index := strings.Index(lines[i], ":")
 		if index < 0 {
-			return fmt.Errorf("cannot found letter `:` in: %v", lines[i])
+			err = fmt.Errorf("cannot found letter `:` in: %v", lines[i])
+			return
 		}
 		repos := lines[i][index+1:]
 		repos = strings.Replace(repos, "\"", "", -1)
 		repos = strings.Replace(repos, ",", "", -1)
 		repos = strings.TrimSpace(repos)
-		err = clone(repos)
+		err = isOk(repos)
 		if err != nil {
-			return fmt.Errorf("cannot clone repository `%v`: %v",
+			err = fmt.Errorf("cannot clone repository `%v`: %v",
 				repos,
 				err)
+			return
 		}
+		rs = append(rs, repos)
 	}
 
-	return nil
+	return
 }
 
-func clone(repos string) (err error) {
+func isOk(repos string) (err error) {
 	// pattern of repository name is
 	// https://github.com/Konstantin8105/c4go.git
 	if !strings.HasPrefix(repos, "https://github.com/") ||
 		!strings.HasSuffix(repos, ".git") {
 		return fmt.Errorf("repository name if not in pattern")
 	}
-
-	fmt.Println(repos)
 	return nil
 }
