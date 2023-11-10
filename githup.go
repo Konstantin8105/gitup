@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -21,9 +22,49 @@ func main() {
 
 		// clone
 		clone = flag.Bool("clone", false, "clone all repositories")
+
+		// pull
+		pull = flag.Bool("pull", false, "git pull all internal folders")
 	)
 
 	flag.Parse()
+
+	if *pull {
+		current, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		err = filepath.Walk(".",
+			func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() {
+					return nil
+				}
+				fld := filepath.Join(path, ".git")
+				if _, err := os.Stat(fld); err != nil {
+					return nil
+				}
+				cmd := exec.Command("git", "pull")
+				cmd.Dir = filepath.Join(current, path)
+				fmt.Println("Dir:", cmd.Dir)
+				out, err := cmd.Output()
+				if err != nil {
+					fmt.Println("Error:", path, err)
+					err = nil
+				} else {
+					fmt.Println(string(out))
+				}
+				return filepath.SkipDir
+			})
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		fmt.Println("Done.")
+		return
+	}
 
 	rs, err := gitup(*userName)
 	if err != nil {
