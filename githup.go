@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -29,11 +30,11 @@ func main() {
 
 	flag.Parse()
 
+	current, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
 	if *pull {
-		current, err := os.Getwd()
-		if err != nil {
-			panic(err)
-		}
 		err = filepath.Walk(".",
 			func(path string, info os.FileInfo, err error) error {
 				if err != nil {
@@ -74,9 +75,13 @@ func main() {
 	for _, repos := range rs {
 		fmt.Fprintf(os.Stdout, "%s\n", repos)
 		if *clone {
-			_, err := exec.Command("git", "clone", repos).Output()
+			cmd := exec.Command("git", "clone", repos)
+			cmd.Dir = current
+			_, err := cmd.Output()
 			if err != nil {
-				log.Fatal(err)
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+			} else {
+				fmt.Fprintf(os.Stdout, "%s ... Done\n", repos)
 			}
 		}
 	}
@@ -88,57 +93,64 @@ func gitup(userName string) (rs []string, err error) {
 		return
 	}
 
-	url := fmt.Sprintf(
-		"https://api.github.com/users/%s/repos?page=$PAGE&per_page=1000",
-		userName)
+	for page := 1; page < 100; page++ {
+		url := fmt.Sprintf(
+			"https://api.github.com/users/%s/repos?page=%d&per_page=100",
+			userName, page)
 
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		err = fmt.Errorf("cannot get request: %v", err)
-		return
-	}
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		err = fmt.Errorf("cannot get responce: %v", err)
-		return
-	}
-
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		err = fmt.Errorf("cannot read body: %v", err)
-		return
-	}
-
-	lines := strings.Split(string(body), ",")
-	for i := range lines {
-		// find lines like
-		//"clone_url": "https://github.com/Konstantin8105/c4go.git",
-		if !strings.Contains(lines[i], "\"clone_url\"") {
-			continue
-		}
-		// parse
-		index := strings.Index(lines[i], ":")
-		if index < 0 {
-			err = fmt.Errorf("cannot found letter `:` in: %v", lines[i])
-			return
-		}
-		repos := lines[i][index+1:]
-		repos = strings.Replace(repos, "\"", "", -1)
-		repos = strings.Replace(repos, ",", "", -1)
-		repos = strings.TrimSpace(repos)
-		err = isOk(repos)
+		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			err = fmt.Errorf("cannot clone repository `%v`: %v",
-				repos,
-				err)
-			return
+			err = fmt.Errorf("cannot get request: %v", err)
+			return nil, err
 		}
-		rs = append(rs, repos)
-	}
 
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			err = fmt.Errorf("cannot get responce: %v", err)
+			return nil, err
+		}
+
+		defer res.Body.Close()
+
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			err = fmt.Errorf("cannot read body: %v", err)
+			return nil, err
+		}
+
+		lines := strings.Split(string(body), ",")
+		found := false
+		for i := range lines {
+			// find lines like
+			//"clone_url": "https://github.com/Konstantin8105/c4go.git",
+			if !strings.Contains(lines[i], "\"clone_url\"") {
+				continue
+			}
+			// parse
+			index := strings.Index(lines[i], ":")
+			if index < 0 {
+				err = fmt.Errorf("cannot found letter `:` in: %v", lines[i])
+				return nil, err
+			}
+			repos := lines[i][index+1:]
+			repos = strings.Replace(repos, "\"", "", -1)
+			repos = strings.Replace(repos, ",", "", -1)
+			repos = strings.TrimSpace(repos)
+			err = isOk(repos)
+			if err != nil {
+				err = fmt.Errorf("cannot clone repository `%v`: %v",
+					repos,
+					err)
+				return nil, err
+			}
+			rs = append(rs, repos)
+			found = true
+		}
+		if !found {
+			break
+		}
+	}
+	sort.Strings(rs)
 	return
 }
 
