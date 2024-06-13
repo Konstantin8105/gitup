@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
 func main() {
@@ -35,6 +37,39 @@ func main() {
 		panic(err)
 	}
 	if *pull {
+		var wg sync.WaitGroup
+		size := 10
+		output := make([]string, size)
+		paths := make(chan string, size)
+		for i := 0; i < size; i++ {
+			wg.Add(1)
+			go func(pos int) {
+				defer wg.Done()
+				for path := range paths {
+					output[pos] = path
+					cmd := exec.Command("git", "pull")
+					cmd.Dir = filepath.Join(current, path)
+					fmt.Println("Dir:", path)
+					out, err := cmd.Output()
+					if err != nil {
+						fmt.Println("Error:", path, err)
+						err = nil
+					} else {
+						fmt.Println(string(out))
+					}
+					output[pos] = ""
+				}
+			}(i)
+		}
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			for range ticker.C {
+				fmt.Println("List of paths:")
+				for i := range output {
+					fmt.Println(i, output[i])
+				}
+			}
+		}()
 		err = filepath.Walk(".",
 			func(path string, info os.FileInfo, err error) error {
 				if err != nil {
@@ -47,22 +82,15 @@ func main() {
 				if _, err := os.Stat(fld); err != nil {
 					return nil
 				}
-				cmd := exec.Command("git", "pull")
-				cmd.Dir = filepath.Join(current, path)
-				fmt.Println("Dir:", cmd.Dir)
-				out, err := cmd.Output()
-				if err != nil {
-					fmt.Println("Error:", path, err)
-					err = nil
-				} else {
-					fmt.Println(string(out))
-				}
+				paths <- path
 				return filepath.SkipDir
 			})
 		if err != nil {
 			log.Println(err)
 			return
 		}
+		close(paths)
+		wg.Wait()
 		fmt.Println("Done.")
 		return
 	}
